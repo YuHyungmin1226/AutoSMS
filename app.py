@@ -48,6 +48,9 @@ class ContactSelector(ctk.CTkToplevel):
         self.check_vars = [] # List of (var, phone, widget)
         self.render_contacts()
 
+        # 3. 하단 확인 버튼
+        ctk.CTkButton(self, text="선택 완료", height=45, command=self.confirm).grid(row=3, column=0, sticky="ew", padx=10, pady=10)
+
     def render_contacts(self):
         # 기존 위젯 제거
         for widget in self.scroll_frame.winfo_children():
