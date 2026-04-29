@@ -42,6 +42,22 @@ class AddressBookManager:
         conn.commit()
         conn.close()
 
+    def delete_contacts_by_phone(self, phones):
+        if not phones: return
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        placeholders = ', '.join(['?'] * len(phones))
+        cursor.execute(f"DELETE FROM contacts WHERE phone IN ({placeholders})", phones)
+        conn.commit()
+        conn.close()
+
+    def clear_all_contacts(self):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM contacts")
+        conn.commit()
+        conn.close()
+
     def import_from_excel(self, file_path):
         """
         엑셀 파일(xlsx, csv)을 읽어 DB에 저장합니다.

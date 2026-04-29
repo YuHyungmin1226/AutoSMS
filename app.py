@@ -241,6 +241,9 @@ class AutoSMSApp(ctk.CTk):
         ctk.CTkButton(toolbar, text="+ 단일 추가", width=120, command=self.dummy_action).pack(side="left", padx=15, pady=10)
         ctk.CTkButton(toolbar, text="📥 엑셀 불러오기", fg_color="green", hover_color="darkgreen", command=self.on_excel_import).pack(side="left", padx=5)
         ctk.CTkButton(toolbar, text="📤 엑셀 내보내기", command=self.on_excel_export).pack(side="left", padx=5)
+        
+        ctk.CTkButton(toolbar, text="🗑 전체 삭제", fg_color="#A02020", hover_color="#801010", command=self.on_delete_all_contacts).pack(side="right", padx=15, pady=10)
+        ctk.CTkButton(toolbar, text="✂ 선택 삭제", fg_color="#A02020", hover_color="#801010", command=self.on_delete_selected_contacts).pack(side="right", padx=5)
 
         # 테이블 영역
         self.contacts_view = ctk.CTkTextbox(frame, font=ctk.CTkFont(family="Consolas", size=13))
@@ -541,6 +544,32 @@ class AutoSMSApp(ctk.CTk):
     def show_initial_setup_popup(self):
         if messagebox.askyesno("API 설정 알림", "현재 API 설정이 되어 있지 않습니다.\n설정 화면으로 이동하시겠습니까?"):
             self.select_screen("settings")
+
+    def on_delete_all_contacts(self):
+        if not self.db_mgr.get_all_contacts().empty:
+            if messagebox.askyesno("전체 삭제 확인", "주소록의 모든 데이터를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다."):
+                self.db_mgr.clear_all_contacts()
+                messagebox.showinfo("삭제 완료", "모든 연락처가 삭제되었습니다.")
+                self.load_data()
+        else:
+            messagebox.showinfo("안내", "삭제할 연락처가 없습니다.")
+
+    def on_delete_selected_contacts(self):
+        df = self.db_mgr.get_all_contacts()
+        if df.empty:
+            messagebox.showinfo("안내", "주소록이 비어 있습니다.")
+            return
+            
+        def confirm_delete(phones):
+            if not phones: return
+            if messagebox.askyesno("선택 삭제 확인", f"선택한 {len(phones)}개의 연락처를 삭제하시겠습니까?"):
+                self.db_mgr.delete_contacts_by_phone(phones)
+                messagebox.showinfo("삭제 완료", "선택한 연락처가 삭제되었습니다.")
+                self.load_data()
+
+        selector = ContactSelector(self, df, confirm_delete)
+        selector.title("삭제할 연락처 선택")
+        selector.grab_set()
 
     def on_clear_recipients(self):
         if messagebox.askyesno("목록 비우기", "수신인 목록을 모두 지우시겠습니까?"):
