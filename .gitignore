@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Data & Config (Sensitive)
+auto_sms.db
+config.json
+*.xlsx
+*.csv
+
+# Build & Dist
+build/
+dist/
+*.spec
+
+# Tools
+adb_tools/
+platform-tools/
+
+# OS specific
+.DS_Store
+Thumbs.db
