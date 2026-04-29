@@ -14,7 +14,9 @@ ENV/
 auto_sms.db
 config.json
 *.xlsx
+*.xls
 *.csv
+!samples/sample_contacts.xlsx
 
 # Build & Dist
 build/
@@ -22,6 +24,7 @@ dist/
 *.spec
 
 # Tools
+adb/
 adb_tools/
 platform-tools/
 
