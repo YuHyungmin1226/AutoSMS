@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ADB
+adb/
+
+# Data
+*.xlsx
+*.xls
+!samples/sample_contacts.xlsx
+
+# Environments
+.venv/
+env/
+venv/
+ENV/
+
+# OS
+.DS_Store
+Thumbs.db
