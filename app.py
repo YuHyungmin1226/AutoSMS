@@ -189,6 +189,8 @@ class AutoSMSApp(ctk.CTk):
         
         self.recipients_box = ctk.CTkTextbox(recv_frame, height=350, border_width=1)
         self.recipients_box.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        self.recipients_box.bind("<ButtonRelease-1>", self.on_recipient_select)
+        self.recipients_box.bind("<KeyRelease>", self.on_recipient_select)
 
         # 2. 메시지 섹션
         msg_frame = ctk.CTkFrame(content_layout, corner_radius=12)
@@ -345,9 +347,51 @@ class AutoSMSApp(ctk.CTk):
         if self.use_memo_var.get():
             self.msg_box.configure(state="disabled", fg_color="gray30")
             self.byte_info.configure(text="개별 메모 발송 모드 활성화됨")
+            
+            # 메모 캐시 생성
+            df = self.db_mgr.get_all_contacts()
+            self.memo_cache = {str(row['phone']): str(row['memo']) for _, row in df.iterrows() if row.get('memo')}
+            
+            # 안내 메시지 표시
+            self.msg_box.configure(state="normal")
+            self.msg_box.delete("1.0", "end")
+            self.msg_box.insert("1.0", "수신인 목록에서 번호를 클릭하면 개별 메시지 내용을 미리볼 수 있습니다.")
+            self.msg_box.configure(state="disabled")
         else:
             self.msg_box.configure(state="normal", fg_color="gray20")
+            self.memo_cache = {}
+            self.msg_box.delete("1.0", "end")
             self.refresh_byte_info()
+
+    def on_recipient_select(self, event=None):
+        if not self.use_memo_var.get() or not hasattr(self, 'memo_cache'):
+            return
+            
+        try:
+            # 현재 커서가 위치한 줄의 텍스트(전화번호) 가져오기
+            idx = self.recipients_box.index("insert")
+            line_num = idx.split('.')[0]
+            phone = self.recipients_box.get(f"{line_num}.0", f"{line_num}.end").strip()
+            
+            if not phone:
+                return
+                
+            memo = self.memo_cache.get(phone, "[메모가 등록되지 않은 연락처입니다]")
+            
+            # 메시지 창 업데이트
+            self.msg_box.configure(state="normal")
+            self.msg_box.delete("1.0", "end")
+            self.msg_box.insert("1.0", memo)
+            self.msg_box.configure(state="disabled")
+            
+            # 바이트 정보 업데이트
+            blen = get_byte_length(memo)
+            mtype = determine_msg_type(memo, self.msg_type_var.get() if self.msg_type_var.get() != "AUTO" else None)
+            limit = 90 if mtype == "SMS" else 2000
+            self.byte_info.configure(text=f"선택된 메모: {blen} / {limit} bytes ({mtype})")
+            
+        except Exception as e:
+            print(f"Error in on_recipient_select: {e}")
 
     def make_entry(self, parent, lbl, row):
         ctk.CTkLabel(parent, text=lbl).grid(row=row, column=0, padx=25, pady=15, sticky="w")
