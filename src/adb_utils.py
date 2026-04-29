@@ -9,10 +9,14 @@ class ADBUtils:
     def run_cmd(self, args):
         cmd = [self.adb_path] + args
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            return result.stdout.strip()
+            # Use utf-8 encoding and ignore errors to prevent cp949 decoding issues on Windows
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding='utf-8', errors='ignore')
+            return result.stdout.strip() if result.stdout else ""
         except subprocess.CalledProcessError as e:
-            return f"Error: {e.stderr}"
+            error_msg = e.stderr.strip() if e.stderr else str(e)
+            return f"Error: {error_msg}"
+        except Exception as e:
+            return f"Error: {str(e)}"
 
     def check_connection(self):
         output = self.run_cmd(["devices"])
@@ -20,9 +24,8 @@ class ADBUtils:
         devices = [line for line in lines[1:] if line.strip() and "device" in line]
         return len(devices) > 0
 
-    def send_sms(self, phone_number, message, delay=5):
+    def send_sms(self, phone_number, message, delay=5, x=None, y=None):
         # Open Google Messages with the number and message
-        # Package for Google Messages: com.google.android.apps.messaging
         self.run_cmd([
             "shell", "am", "start", "-a", "android.intent.action.SENDTO",
             "-d", f"sms:{phone_number}",
@@ -30,15 +33,12 @@ class ADBUtils:
             "com.google.android.apps.messaging"
         ])
         
-        # Wait for the app to load
-        time.sleep(2)
+        # Wait for the app to load and message to populate
+        time.sleep(4)
         
-        # Simulating send button click
-        # This is the tricky part. For Google Messages, usually focus is on the send button or text field.
-        # Common sequence: Right arrow (focus send) -> Enter
-        self.run_cmd(["shell", "input", "keyevent", "22"]) # Right
-        time.sleep(0.5)
-        self.run_cmd(["shell", "input", "keyevent", "66"]) # Enter
+        # Tap the specified coordinates
+        if x is not None and y is not None:
+            self.run_cmd(["shell", "input", "tap", str(x), str(y)])
         
         # Wait before next message to avoid spam detection
         time.sleep(delay)

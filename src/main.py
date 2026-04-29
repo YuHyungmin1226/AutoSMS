@@ -65,7 +65,18 @@ class AutoSMSApp(ctk.CTk):
         self.delay_entry.pack(padx=20, pady=5, fill="x")
 
         self.status_indicator = ctk.CTkLabel(self.sidebar, text="● ADB 미연결", text_color="red", font=ctk.CTkFont(weight="bold"))
-        self.status_indicator.pack(padx=20, pady=20)
+        self.status_indicator.pack(padx=20, pady=10)
+
+        # Coordinate Inputs
+        ctk.CTkLabel(self.sidebar, text="발송 버튼 좌표 (X, Y)", font=ctk.CTkFont(size=13, weight="bold")).pack(padx=20, pady=(10, 0))
+        self.coord_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        self.coord_frame.pack(padx=20, pady=5, fill="x")
+        
+        self.entry_x = ctk.CTkEntry(self.coord_frame, placeholder_text="X", width=120)
+        self.entry_x.pack(side="left", padx=(0, 5), expand=True, fill="x")
+        
+        self.entry_y = ctk.CTkEntry(self.coord_frame, placeholder_text="Y", width=120)
+        self.entry_y.pack(side="left", expand=True, fill="x")
 
         self.check_adb_btn = ctk.CTkButton(self.sidebar, text="연결 확인", command=self.check_connection, fg_color="transparent", border_width=1)
         self.check_adb_btn.pack(padx=20, pady=10, fill="x")
@@ -209,16 +220,24 @@ class AutoSMSApp(ctk.CTk):
 
         default_msg = self.msg_text.get("1.0", "end-1c").strip()
         delay = int(self.delay_entry.get() if self.delay_entry.get().isdigit() else 5)
+        
+        # Get coordinates
+        try:
+            target_x = int(self.entry_x.get())
+            target_y = int(self.entry_y.get())
+        except ValueError:
+            messagebox.showwarning("Warning", "발송 버튼의 X, Y 좌표(숫자)를 입력해주세요.")
+            return
 
         self.is_sending = True
         self.send_btn.configure(text="중지", fg_color="#e74c3c")
         
-        threading.Thread(target=self.send_loop, args=(checked_indices, default_msg, delay), daemon=True).start()
+        threading.Thread(target=self.send_loop, args=(checked_indices, default_msg, delay, target_x, target_y), daemon=True).start()
 
-    def send_loop(self, checked_indices, default_msg, delay):
+    def send_loop(self, checked_indices, default_msg, delay, x, y):
         targets = self.df.loc[checked_indices]
         total = len(targets)
-        self.log(f"총 {total}명에게 발송을 시작합니다.")
+        self.log(f"총 {total}명에게 발송을 시작합니다. (좌표: {x}, {y})")
 
         for i, (idx, row) in enumerate(targets.iterrows()):
             if not self.is_sending:
@@ -237,7 +256,7 @@ class AutoSMSApp(ctk.CTk):
                 continue
 
             self.log(f"[{i+1}/{total}] {name}({number})에게 전송 중...")
-            success = self.adb_utils.send_sms(number, msg, delay)
+            success = self.adb_utils.send_sms(number, msg, delay, x, y)
             
             if not success:
                 self.log(f"!! {name}({number}) 전송 실패")
