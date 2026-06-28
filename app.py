@@ -1,14 +1,17 @@
 import customtkinter as ctk # type: ignore
 import pandas as pd # type: ignore
 from tkinter import messagebox, filedialog
+from PIL import Image # type: ignore
 from utils import get_byte_length, determine_msg_type # type: ignore
 from address_book import AddressBookManager # type: ignore
 from sending_manager import SendingManager # type: ignore
 from solapi_service import SolapiService # type: ignore
 from config_manager import load_config, save_config, is_config_valid # type: ignore
 from database import init_db # type: ignore
+from mms_image_utils import MMS_ALLOWED_EXTENSIONS
 import threading
 import time
+import os
 
 # 앱 기본 설정: 프리미엄 다크 테마
 ctk.set_appearance_mode("dark")
@@ -97,6 +100,8 @@ class AutoSMSApp(ctk.CTk):
         self.title("Auto SMS Premium - Pro Edition")
         self.geometry("1200x800")
         self.minsize(1000, 700)
+        self.selected_image_paths = []
+        self.selected_image_preview = None
 
         # 시스템 매니저 초기화
         self.db_mgr = AddressBookManager()
@@ -169,8 +174,9 @@ class AutoSMSApp(ctk.CTk):
 
         content_layout = ctk.CTkFrame(frame, fg_color="transparent")
         content_layout.pack(fill="both", expand=True)
-        content_layout.grid_columnconfigure(0, weight=1)
-        content_layout.grid_columnconfigure(1, weight=1)
+        content_layout.grid_columnconfigure(0, weight=1, uniform="send_columns")
+        content_layout.grid_columnconfigure(1, weight=1, uniform="send_columns")
+        content_layout.grid_rowconfigure(0, weight=1)
 
         # 1. 수신인 섹션
         recv_frame = ctk.CTkFrame(content_layout, corner_radius=12)
@@ -179,7 +185,10 @@ class AutoSMSApp(ctk.CTk):
         recv_header = ctk.CTkFrame(recv_frame, fg_color="transparent")
         recv_header.pack(fill="x", padx=20, pady=(15, 5))
         
-        ctk.CTkLabel(recv_header, text="1. 수신인 목록", font=ctk.CTkFont(weight="bold")).pack(side="left")
+        recv_title = ctk.CTkFrame(recv_header, fg_color="transparent")
+        recv_title.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(recv_title, text="1. 수신인 목록", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w")
+        ctk.CTkLabel(recv_title, text="한 줄에 한 번호씩 입력하거나 주소록에서 불러오세요.", text_color="gray70", font=ctk.CTkFont(size=12)).pack(anchor="w")
         
         ctk.CTkButton(recv_header, text="🗑 비우기", width=80, height=28, 
                       fg_color="#A02020", hover_color="#801010", command=self.on_clear_recipients).pack(side="right", padx=(5, 0))
@@ -196,7 +205,10 @@ class AutoSMSApp(ctk.CTk):
         msg_frame = ctk.CTkFrame(content_layout, corner_radius=12)
         msg_frame.grid(row=0, column=1, padx=(15, 0), sticky="nsew")
         
-        ctk.CTkLabel(msg_frame, text="2. 메시지 내용 작성", font=ctk.CTkFont(weight="bold")).pack(pady=15, padx=20, anchor="w")
+        msg_header = ctk.CTkFrame(msg_frame, fg_color="transparent")
+        msg_header.pack(fill="x", padx=20, pady=(15, 5))
+        ctk.CTkLabel(msg_header, text="2. 메시지 작성", font=ctk.CTkFont(size=16, weight="bold")).pack(anchor="w")
+        ctk.CTkLabel(msg_header, text="AUTO는 길이에 따라 SMS/LMS를 자동 판단합니다.", text_color="gray70", font=ctk.CTkFont(size=12)).pack(anchor="w")
         self.msg_box = ctk.CTkTextbox(msg_frame, height=350, border_width=1)
         self.msg_box.pack(fill="both", expand=True, padx=20, pady=(0, 10))
         self.msg_box.bind("<KeyRelease>", self.refresh_byte_info)
@@ -209,7 +221,7 @@ class AutoSMSApp(ctk.CTk):
         self.byte_info.pack(side="left", padx=15)
 
         self.msg_type_var = ctk.StringVar(value="AUTO")
-        self.type_menu = ctk.CTkOptionMenu(status_bar, values=["AUTO", "SMS", "LMS", "MMS"], width=100, variable=self.msg_type_var)
+        self.type_menu = ctk.CTkOptionMenu(status_bar, values=["AUTO", "SMS", "LMS", "MMS"], width=100, variable=self.msg_type_var, command=self.on_msg_type_change)
         self.type_menu.pack(side="right", padx=10)
 
         # 옵션 섹션
@@ -220,6 +232,23 @@ class AutoSMSApp(ctk.CTk):
         self.use_memo_cb = ctk.CTkCheckBox(opt_frame, text="메모 컬럼을 개별 메시지로 발송", 
                                            variable=self.use_memo_var, command=self.on_memo_toggle)
         self.use_memo_cb.pack(side="left")
+
+        # 여러 이미지는 전송 직전에 MMS 규격에 맞는 한 장의 이미지로 합성됩니다.
+        attach_frame = ctk.CTkFrame(msg_frame, corner_radius=10, fg_color=("gray88", "gray18"))
+        attach_frame.pack(fill="x", padx=20, pady=(0, 20))
+        attach_frame.grid_columnconfigure(1, weight=1)
+
+        self.image_preview_label = ctk.CTkLabel(attach_frame, text="이미지\n없음", width=86, height=64, fg_color=("gray78", "gray25"), corner_radius=8)
+        self.image_preview_label.grid(row=0, column=0, rowspan=2, padx=12, pady=12, sticky="ns")
+
+        ctk.CTkLabel(attach_frame, text="MMS 이미지 첨부", font=ctk.CTkFont(size=14, weight="bold")).grid(row=0, column=1, padx=(0, 12), pady=(12, 2), sticky="w")
+        self.image_status_label = ctk.CTkLabel(attach_frame, text="선택된 이미지 없음", text_color="gray70", anchor="w")
+        self.image_status_label.grid(row=1, column=1, padx=(0, 12), pady=(0, 12), sticky="ew")
+
+        image_buttons = ctk.CTkFrame(attach_frame, fg_color="transparent")
+        image_buttons.grid(row=0, column=2, rowspan=2, padx=(0, 12), pady=12, sticky="e")
+        ctk.CTkButton(image_buttons, text="이미지 선택", width=100, height=30, command=self.on_select_image).pack(pady=(0, 6))
+        ctk.CTkButton(image_buttons, text="해제", width=100, height=30, fg_color="gray35", hover_color="gray28", command=self.on_clear_image).pack()
 
         # 3. 하단 버튼
         self.send_action_btn = ctk.CTkButton(frame, text="메시지 전송 시작", height=60, font=ctk.CTkFont(size=18, weight="bold"),
@@ -419,12 +448,75 @@ class AutoSMSApp(ctk.CTk):
         elif name == "send":
             self.update_send_mode_label()
 
+    def on_msg_type_change(self, _choice=None):
+        self.refresh_byte_info()
+        if self.msg_type_var.get() == "MMS" and not self.selected_image_paths:
+            self.image_status_label.configure(text="MMS 선택됨 · 이미지를 첨부하거나 텍스트 MMS로 발송할 수 있습니다.", text_color="#f0ad4e")
+        elif not self.selected_image_paths:
+            self.image_status_label.configure(text="선택된 이미지 없음", text_color="gray70")
+
     def refresh_byte_info(self, e=None):
         txt = self.msg_box.get("1.0", "end-1c")
         blen = get_byte_length(txt)
         mtype = determine_msg_type(txt, self.msg_type_var.get() if self.msg_type_var.get() != "AUTO" else None)
         limit = 90 if mtype == "SMS" else 2000
         self.byte_info.configure(text=f"{blen} / {limit} bytes ({mtype})")
+
+    def on_select_image(self):
+        file_paths = filedialog.askopenfilenames(
+            title="첨부 이미지 선택",
+            filetypes=[
+                ("Image Files", "*.jpg *.jpeg *.png *.gif"),
+                ("All Files", "*.*")
+            ]
+        )
+        if not file_paths:
+            return
+
+        try:
+            invalid_files = [
+                os.path.basename(path) for path in file_paths
+                if os.path.splitext(path)[1].lower() not in MMS_ALLOWED_EXTENSIONS
+            ]
+            if invalid_files:
+                raise ValueError(f"지원하지 않는 형식: {', '.join(invalid_files)}")
+
+            first_image = file_paths[0]
+            with Image.open(first_image) as img:
+                img.thumbnail((86, 64))
+                preview = ctk.CTkImage(light_image=img.copy(), dark_image=img.copy(), size=img.size)
+
+            self.selected_image_paths = list(file_paths)
+            self.selected_image_preview = preview
+            file_name = os.path.basename(first_image)
+            if len(file_name) > 34:
+                file_name = f"{file_name[:16]}...{file_name[-15:]}"
+            total_kb = max(1, sum(os.path.getsize(path) for path in self.selected_image_paths) // 1024)
+
+            if len(self.selected_image_paths) == 1:
+                status_text = f"{file_name} · 총 {total_kb:,} KB · MMS로 발송"
+            else:
+                status_text = f"{file_name} 외 {len(self.selected_image_paths) - 1}개 · 총 {total_kb:,} KB · MMS로 발송"
+
+            self.image_preview_label.configure(text="", image=self.selected_image_preview)
+            self.image_status_label.configure(
+                text=status_text,
+                text_color="#2b8a3e"
+            )
+            if self.msg_type_var.get() != "MMS":
+                self.msg_type_var.set("MMS")
+                self.refresh_byte_info()
+        except Exception as e:
+            self.selected_image_paths = []
+            self.selected_image_preview = None
+            self.image_preview_label.configure(text="이미지\n없음", image=None)
+            messagebox.showerror("이미지 오류", f"이미지를 불러오지 못했습니다.\n{e}")
+
+    def on_clear_image(self):
+        self.selected_image_paths = []
+        self.selected_image_preview = None
+        self.image_preview_label.configure(text="이미지\n없음", image=None)
+        self.on_msg_type_change()
 
     def load_data(self):
         # 주소록 로드 및 표시 가공
@@ -474,9 +566,21 @@ class AutoSMSApp(ctk.CTk):
             messagebox.showwarning("입력 누락", "수신인 번호를 입력하세요.")
             return
             
-        if not use_memo and not content:
-            messagebox.showwarning("입력 누락", "메시지 내용을 입력하세요.")
+        if not use_memo and not content and not self.selected_image_paths:
+            messagebox.showwarning("입력 누락", "메시지 내용이나 첨부 이미지를 입력하세요.")
             return
+
+        if self.selected_image_paths:
+            send_method = load_config().get("send_method", "SOLAPI")
+            if send_method == "ADB":
+                confirm_msg = (
+                    f"선택한 이미지 {len(self.selected_image_paths)}개를 한 장으로 합성해 ADB MMS 작성 화면에 첨부합니다.\n"
+                    "기기와 문자앱에 따라 전송 버튼 좌표가 필요할 수 있습니다.\n계속하시겠습니까?"
+                )
+            else:
+                confirm_msg = f"선택한 이미지 {len(self.selected_image_paths)}개를 MMS로 첨부해 발송하시겠습니까?"
+            if not messagebox.askyesno("MMS 발송 확인", confirm_msg):
+                return
 
         # 개별 메시지 준비 (메모 사용 시)
         individual_msgs = None
@@ -500,7 +604,13 @@ class AutoSMSApp(ctk.CTk):
         def run_task():
             recipients = [("수신인", n) for n in nums]
             m_type = self.msg_type_var.get() if self.msg_type_var.get() != "AUTO" else None
-            results = self.send_mgr.send_to_recipients(recipients, content, m_type, individual_messages=individual_msgs)
+            results = self.send_mgr.send_to_recipients(
+                recipients,
+                content,
+                m_type,
+                individual_messages=individual_msgs,
+                image_paths=self.selected_image_paths
+            )
             
             success_count = sum(1 for r in results if r["status"] == "Success")
             self.after(0, lambda: messagebox.showinfo("완료", f"총 {len(results)}건 중 {success_count}건 발송 성공!"))
